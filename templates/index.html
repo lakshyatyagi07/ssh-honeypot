@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Honey Trap SOC Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body {
+    background:#020508;
+    color:#c8e6f0;
+    font-family: monospace;
+    margin:0;
+    padding:20px;
+}
+
+h1 {
+    text-align:center;
+    color:#00e5ff;
+}
+
+.grid {
+    display:grid;
+    grid-template-columns: repeat(4,1fr);
+    gap:15px;
+}
+
+.card {
+    background:#0d1e2b;
+    padding:15px;
+    border:1px solid #0f3a4a;
+}
+
+.value {
+    font-size:28px;
+    color:#00e5ff;
+}
+
+.small {
+    font-size:12px;
+    color:#4a7a8a;
+}
+
+table {
+    width:100%;
+    border-collapse: collapse;
+}
+
+td, th {
+    padding:6px;
+    border-bottom:1px solid #0f3a4a;
+}
+
+#terminal {
+    background:black;
+    height:200px;
+    overflow-y:auto;
+    padding:10px;
+    font-size:12px;
+}
+
+.high { color:orange; }
+.critical { color:red; }
+</style>
+</head>
+
+<body>
+
+<h1>Cyber Threat Monitoring Dashboard</h1>
+
+<div class="grid">
+
+<div class="card">
+<h3>Total Attacks</h3>
+<div id="total" class="value">0</div>
+</div>
+
+<div class="card">
+<h3>Unique Attackers</h3>
+<div id="ips" class="value">0</div>
+</div>
+
+<div class="card">
+<h3>Critical Threats</h3>
+<div id="critical" class="value">0</div>
+</div>
+
+<div class="card">
+<h3>Top Attacker</h3>
+<div id="top_attacker" class="value small"></div>
+</div>
+
+</div>
+
+<br>
+
+<div class="grid">
+
+<div class="card">
+<h3>Threat Distribution</h3>
+<canvas id="threatChart"></canvas>
+</div>
+
+<div class="card">
+<h3>Port Activity</h3>
+<canvas id="portChart"></canvas>
+</div>
+
+<div class="card">
+<h3>Attack Timeline</h3>
+<canvas id="timeChart"></canvas>
+</div>
+
+<div class="card">
+<h3>AI Insights</h3>
+<div id="ai"></div>
+</div>
+
+</div>
+
+<br>
+
+<div class="grid">
+
+<div class="card">
+<h3>Live Attack Feed</h3>
+<table id="logs"></table>
+</div>
+
+<div class="card">
+<h3>Top Threats</h3>
+<div id="top_threats"></div>
+</div>
+
+<div class="card">
+<h3>Top Commands</h3>
+<div id="commands"></div>
+</div>
+
+<div class="card">
+<h3>Live Terminal</h3>
+<div id="terminal"></div>
+</div>
+
+</div>
+
+<script>
+
+// -------- STATS --------
+async function loadStats() {
+    const res = await fetch('/api/stats');
+    const d = await res.json();
+
+    document.getElementById('total').innerText = d.total_attacks;
+    document.getElementById('ips').innerText = d.unique_ips;
+    document.getElementById('critical').innerText = d.critical_count;
+
+    if (d.top_threats.length > 0) {
+        document.getElementById('top_attacker').innerText = d.top_threats[0].ip;
+    }
+
+    new Chart(document.getElementById('threatChart'), {
+        type: 'pie',
+        data: {
+            labels: Object.keys(d.threat_counts),
+            datasets: [{
+                data: Object.values(d.threat_counts)
+            }]
+        }
+    });
+
+    new Chart(document.getElementById('portChart'), {
+        type: 'bar',
+        data: {
+            labels: Object.keys(d.port_counts),
+            datasets: [{
+                data: Object.values(d.port_counts)
+            }]
+        }
+    });
+
+    new Chart(document.getElementById('timeChart'), {
+        type: 'line',
+        data: {
+            labels: Object.keys(d.hourly_counts),
+            datasets: [{
+                data: Object.values(d.hourly_counts)
+            }]
+        }
+    });
+
+    let html = "";
+    d.top_threats.forEach(t => {
+        html += `<p>${t.ip} → Score: ${t.score}</p>`;
+    });
+    document.getElementById('top_threats').innerHTML = html;
+}
+
+// -------- LOGS --------
+async function loadLogs() {
+    const res = await fetch('/api/logs');
+    const logs = await res.json();
+
+    let html = "<tr><th>IP</th><th>Command</th><th>Threat</th></tr>";
+
+    logs.slice(-10).reverse().forEach(l => {
+        html += `<tr>
+        <td>${l.ip}</td>
+        <td>${l.message}</td>
+        <td class="${l.threat_level.toLowerCase()}">${l.threat_level}</td>
+        </tr>`;
+    });
+
+    document.getElementById('logs').innerHTML = html;
+}
+
+// -------- AI --------
+async function loadAI() {
+    const res = await fetch('/api/ai_analysis');
+    const data = await res.json();
+
+    let html = "";
+    data.forEach(d => {
+        html += `<p><b>${d.ip}</b><br>${d.insights.join("<br>")}</p>`;
+    });
+
+    document.getElementById('ai').innerHTML = html;
+}
+
+// -------- COMMANDS --------
+async function loadCommands() {
+    const res = await fetch('/api/top_commands');
+    const data = await res.json();
+
+    let html = "";
+    data.forEach(c => {
+        html += `<p>${c[0]} → ${c[1]}</p>`;
+    });
+
+    document.getElementById('commands').innerHTML = html;
+}
+
+// -------- STREAM --------
+function startStream() {
+    const term = document.getElementById('terminal');
+    const evt = new EventSource('/api/stream');
+
+    evt.onmessage = function(e) {
+        const d = JSON.parse(e.data);
+
+        const line = document.createElement("div");
+        line.innerText = `[${d.ip}] ${d.message} (${d.threat_level})`;
+
+        term.appendChild(line);
+        term.scrollTop = term.scrollHeight;
+    };
+}
+
+// -------- INIT --------
+loadStats();
+loadLogs();
+loadAI();
+loadCommands();
+startStream();
+
+setInterval(loadLogs, 3000);
+
+</script>
+
+</body>
+</html>
