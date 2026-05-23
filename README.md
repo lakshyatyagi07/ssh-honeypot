@@ -133,7 +133,7 @@ Do not deploy this system on public networks without proper authorization.
 
 - **Lakshya Tyagi**
 - **Isha Balodhi**
-- **Shreyansh Soni**
+- **Shreyans Soni**
 
 B.Tech CSE (Cyber Security)
 
